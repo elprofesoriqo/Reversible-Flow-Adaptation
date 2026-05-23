@@ -3,7 +3,7 @@
 #SBATCH --output=logs/train_%j.log
 #SBATCH --error=logs/train_%j.err
 #SBATCH --time=24:00:00
-#SBATCH --partition=gpu
+#SBATCH --partition=tesla
 #SBATCH --gres=gpu:h100:1       # Request 1 NVIDIA H100 GPU
 #SBATCH --cpus-per-task=8       # Number of CPU cores
 #SBATCH --mem=64G               # RAM memory
