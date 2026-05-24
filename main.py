@@ -120,10 +120,15 @@ def main():
         chunk_action = action # Shape: (batch_size, chunk_size, action_dim)
         buffer_state = add_batch(buffer_state, (chunk_proprio, chunk_priv, chunk_vision, chunk_action))
         
-        # Compute Generalized Advantage Estimation
         # Get next value for bootstrap
-        _, _, next_value = jax.vmap(teacher.apply, in_axes=(None, 0, 0))(teacher_params, env.get_proprioceptive_obs(current_states), env.get_privileged_obs(current_states))
-        
+        batched_get_proprio = jax.vmap(env.get_proprioceptive_obs)
+        batched_get_priv = jax.vmap(env.get_privileged_obs)
+        _, _, next_value = jax.vmap(teacher.apply, in_axes=(None, 0, 0))(
+            teacher_params, 
+            batched_get_proprio(current_states), 
+            batched_get_priv(current_states)
+        )
+
         advantages, returns = batched_gae(rewards, values, next_value, dones)
         
         # Reshape for PPO Batch
