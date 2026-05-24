@@ -73,7 +73,7 @@ class VisionEncoder(nn.Module):
         cls_out = x[:, 0]
         out = nn.Dense(self.feature_dim)(cls_out)
         
-        return out
+        return out, cls_out
 
 class UNet1D(nn.Module):
     """1D Denoising Network over Action Sequences."""
@@ -102,3 +102,60 @@ class UNet1D(nn.Module):
         # Predict Noise (Epsilon)
         noise_pred = nn.Conv(features=self.action_dim, kernel_size=(3,), padding='SAME')(x)
         return noise_pred
+
+class LowRankDense(nn.Module):
+    """Dense layer with Low-Rank Adapters (LoRA)"""
+    features: int
+    rank: int = 8
+    
+    @nn.compact
+    def __call__(self, x: jax.Array) -> jax.Array:
+        # Base frozen dense layer
+        base = nn.Dense(self.features, name='base')(x)
+        
+        # LoRA path A -> B
+        lora_A = nn.Dense(self.rank, use_bias=False, name='lora_A')(x)
+        lora_B = nn.Dense(self.features, use_bias=False, kernel_init=nn.initializers.zeros, name='lora_B')(lora_A)
+        
+        return base + lora_B
+
+class PhysicsHead(nn.Module):
+    """Predicts physics params from ViT [CLS] token using LoRA adapters for TTA.
+    Predicts: friction mu (1), mass m (1), surface normal n_hat (3).
+    """
+    out_dim: int = 5
+    
+    @nn.compact
+    def __call__(self, cls_token: jax.Array) -> jax.Array:
+        # 2-layer MLP
+        x = LowRankDense(features=128)(cls_token)
+        x = nn.gelu(x)
+        x = LowRankDense(features=self.out_dim)(x)
+        return x
+
+class InvertibleProjectionMapping(nn.Module):
+    """Lightweight Normalizing Flow (Affine Coupling) mapping PD torques to generative action manifold."""
+    hidden_dim: int = 64
+    
+    @nn.compact
+    def __call__(self, x: jax.Array, reverse: bool = False) -> jax.Array:
+        d = x.shape[-1] // 2
+        x1, x2 = x[..., :d], x[..., d:]
+        
+        # Scale (s) and translation (t) networks
+        s = nn.Dense(self.hidden_dim)(x1)
+        s = nn.gelu(s)
+        s = nn.Dense(x2.shape[-1], kernel_init=nn.initializers.zeros)(s)
+        
+        t = nn.Dense(self.hidden_dim)(x1)
+        t = nn.gelu(t)
+        t = nn.Dense(x2.shape[-1], kernel_init=nn.initializers.zeros)(t)
+        
+        if not reverse:
+            # Forward pass: mapping from PD torque to generative manifold
+            y2 = x2 * jnp.exp(s) + t
+            return jnp.concatenate([x1, y2], axis=-1)
+        else:
+            # Reverse pass: from generative manifold back to PD torque
+            y2 = (x2 - t) * jnp.exp(-s)
+            return jnp.concatenate([x1, y2], axis=-1)
