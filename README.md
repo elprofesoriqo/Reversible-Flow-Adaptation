@@ -1,4 +1,6 @@
-# Research: Flow-Matched Distillation with Auxiliary Physics Representation for Agile Quadrupedal Locomotion
+# Nahhh it will be smth cooler &mdash; stay tuned 
+
+Research: Flow-Matched Distillation with Auxiliary Physics Representation for Agile Quadrupedal Locomotion
 
 **Optimal Transport Flow Matching for Asymmetric Visual-Proprioceptive Locomotion Distillation**
 
