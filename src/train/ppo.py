@@ -9,7 +9,7 @@ from src.models.teacher import TeacherPolicy
 def compute_gae(rewards, values, next_value, dones, gamma=0.99, gae_lambda=0.95):
     """Computes Generalized Advantage Estimation."""
     # Append next_value for bootstrap
-    all_values = jnp.concatenate([values, next_value[None, :]], axis=0)
+    all_values = jnp.concatenate([values, next_value[None]], axis=0)
     
     # Calculate TD errors
     deltas = rewards + gamma * all_values[1:] * (1.0 - dones) - all_values[:-1]
@@ -27,7 +27,8 @@ def ppo_loss_fn(params, apply_fn, obs_proprio, obs_priv, actions, old_log_probs,
     """PPO clipped surrogate objective with true Gaussian continuous control math."""
     
     # Forward pass: get parameterized distribution and value
-    actor_mean, actor_log_std, critic_value = apply_fn(params, obs_proprio, obs_priv)
+    teacher = TeacherPolicy()
+    actor_mean, actor_log_std, critic_value = teacher.apply(params, obs_proprio, obs_priv)
     actor_std = jnp.exp(actor_log_std)
     
     # Calculate new log probabilities of the actions taken during rollout
@@ -62,7 +63,7 @@ def ppo_loss_fn(params, apply_fn, obs_proprio, obs_priv, actions, old_log_probs,
     
     return total_loss, metrics
 
-@jax.jit
+@jax.jit(static_argnames=('tx',))
 def ppo_update_step(params, opt_state, batch, tx):
     """Jitted PPO update over a batch of true on-policy transitions."""
     obs_proprio, obs_priv, actions, old_log_probs, advantages, returns = batch
@@ -70,7 +71,7 @@ def ppo_update_step(params, opt_state, batch, tx):
     teacher = TeacherPolicy()
     
     (loss, metrics), grads = jax.value_and_grad(ppo_loss_fn, has_aux=True)(
-        params, teacher.apply, obs_proprio, obs_priv, actions, old_log_probs, advantages, returns
+        params, obs_proprio, obs_priv, actions, old_log_probs, advantages, returns
     )
     
     updates, opt_state = tx.update(grads, opt_state, params)

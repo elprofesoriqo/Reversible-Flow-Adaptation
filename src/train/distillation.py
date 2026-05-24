@@ -7,7 +7,7 @@ import optax
 from src.models.teacher import TeacherPolicy
 from src.models.student import StudentPolicy
 
-def loss_fn(student_params, student_apply_fn, teacher_action_chunks, proprio_obs, privileged_obs, vision_obs, key, config):
+def loss_fn(student_params, teacher_action_chunks, proprio_obs, privileged_obs, vision_obs, key, config):
     """Computes Flow Matching Vector Field Loss and Auxiliary Distillation Loss."""
     batch_size = teacher_action_chunks.shape[0]
     key_t, key_noise = jax.random.split(key)
@@ -29,7 +29,8 @@ def loss_fn(student_params, student_apply_fn, teacher_action_chunks, proprio_obs
     target_vector_field = x_1 - x_0
     
     # Predict Vector Field and Privileged State with Student Policy
-    vector_field_pred, priv_pred = student_apply_fn(
+    student = StudentPolicy()
+    vector_field_pred, priv_pred = student.apply(
         student_params, proprio_obs, vision_obs, x_t, t
     )
     
@@ -50,7 +51,7 @@ def loss_fn(student_params, student_apply_fn, teacher_action_chunks, proprio_obs
     
     return total_loss, metrics
 
-@jax.jit
+@jax.jit(static_argnames=('config', 'tx'))
 def train_step(student_params, opt_state, batch, key, tx, config):
     """
     HLO-compiled training step for Flow Matching operating on off-policy ReplayBuffer batches.
@@ -60,7 +61,7 @@ def train_step(student_params, opt_state, batch, key, tx, config):
     # Compute Gradients
     student = StudentPolicy()
     (loss, metrics), grads = jax.value_and_grad(loss_fn, has_aux=True)(
-        student_params, student.apply, action_chunks, 
+        student_params, action_chunks, 
         proprio_obs, privileged_obs, vision_obs, key, config
     )
     

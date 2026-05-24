@@ -61,7 +61,7 @@ def add_batch(buffer_state: ReplayBufferState, batch: Tuple[jax.Array, jax.Array
         capacity=buffer_state.capacity
     )
 
-@jax.jit
+@jax.jit(static_argnames=('batch_size',))
 def sample_batch(buffer_state: ReplayBufferState, key: jax.Array, batch_size: int) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
     """Samples a random off-policy batch from the populated buffer."""
     maxval = jnp.maximum(buffer_state.size, 1) 
