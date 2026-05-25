@@ -7,6 +7,9 @@ import optax
 # pyrefly: ignore [missing-import]
 import wandb
 import time
+import os
+# pyrefly: ignore [missing-import]
+import orbax.checkpoint as ocp
 
 from src.configs.h100_config import H100Config
 from src.env.quadruped_env import QuadrupedEnv
@@ -16,6 +19,7 @@ from src.train.ppo import ppo_update_step, compute_gae
 from src.train.data_collector import collect_trajectories
 from src.train.distillation import train_step as flow_matching_step
 from src.train.replay_buffer import init_buffer, add_batch, sample_batch
+from src.train.logger import WandbLogger
 
 def run_latency_benchmark(student_params, dummy_proprio, dummy_vision, dummy_noisy_act):
     """Benchmarks inference speed of Flow Matching vs DDPM."""
@@ -67,10 +71,12 @@ def run_latency_benchmark(student_params, dummy_proprio, dummy_vision, dummy_noi
 def main():
     config = H100Config()
     
-    wandb.init(
-        project=config.wandb_project,
-        config=config.__dict__
-    )
+    logger = WandbLogger(config)
+    
+    # Setup Checkpointer
+    checkpoint_dir = os.path.abspath(os.path.join(os.getcwd(), 'checkpoints'))
+    options = ocp.CheckpointManagerOptions(max_to_keep=3, create=True)
+    checkpoint_manager = ocp.CheckpointManager(checkpoint_dir, options=options)
     
     key = jax.random.PRNGKey(42)
     
@@ -106,6 +112,7 @@ def main():
     batched_gae = jax.vmap(compute_gae)
         
     for epoch in range(1, 11):
+        epoch_start_time = time.time()
         key, subkey1, subkey2 = jax.random.split(key, 3)
         
         # On-Policy Data Collection
@@ -153,18 +160,23 @@ def main():
         )
         
         # Log to WandB
-        wandb.log({
-            "epoch": epoch,
-            **ppo_metrics,
-            **fm_metrics
-        })
+        sys_metrics = {
+            "SPS": (config.batch_size * config.chunk_size) / (time.time() - epoch_start_time),
+            "vram_gb": 0.0 # Requires NVML bindings, placeholder
+        }
+        logger.log_metrics(epoch, ppo_metrics, fm_metrics, sys_metrics)
         
-        print(f"Epoch {epoch} | Teacher Loss: {ppo_metrics['teacher_total_loss']:.4f} | Student FM: {fm_metrics['fm_loss']:.4f} | Student Aux: {fm_metrics['aux_loss']:.4f}")
+        print(f"Epoch {epoch} | Teacher Loss: {ppo_metrics['teacher_total_loss']:.4f} | Student FM: {fm_metrics['distillation/fm_vector_field_loss']:.4f}")
         
+        # Save Checkpoint
+        ckpt = {'teacher': teacher_params, 'student': student_params, 'buffer': buffer_state}
+        checkpoint_manager.save(epoch, args=ocp.args.StandardSave(ckpt))
+        print(f"Saved checkpoint to {checkpoint_dir} at epoch {epoch}")
+            
     # Benchmark
     run_latency_benchmark(student_params, dummy_proprio, dummy_vision, dummy_noisy_act)
     
-    wandb.finish()
+    logger.finish()
 
 if __name__ == "__main__":
     main()
