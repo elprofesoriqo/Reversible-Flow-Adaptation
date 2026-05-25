@@ -10,9 +10,8 @@ import time
 import os
 # pyrefly: ignore [missing-import]
 import orbax.checkpoint as ocp
+import argparse
 
-from src.configs.h100_config import H100Config
-from src.env.quadruped_env import QuadrupedEnv
 from src.models.teacher import TeacherPolicy
 from src.models.student import StudentPolicy
 from src.train.ppo import ppo_update_step, compute_gae
@@ -69,8 +68,22 @@ def run_latency_benchmark(student_params, dummy_proprio, dummy_vision, dummy_noi
     })
 
 def main():
-    config = H100Config()
+    parser = argparse.ArgumentParser(description="Reversible Flow Adaptation Training")
+    parser.add_argument('--env', type=str, default='quadruped', choices=['quadruped', 'panda'],
+                        help="Select the environment morphology to train on.")
+    args = parser.parse_args()
     
+    if args.env == 'panda':
+        from src.configs.panda_config import PandaConfig
+        from src.env.panda_env import PandaEnv
+        config = PandaConfig()
+        env = PandaEnv(config)
+    else:
+        from src.configs.h100_config import H100Config
+        from src.env.quadruped_env import QuadrupedEnv
+        config = H100Config()
+        env = QuadrupedEnv(config)
+        
     logger = WandbLogger(config)
     
     # Setup Checkpointer
@@ -80,8 +93,6 @@ def main():
     
     key = jax.random.PRNGKey(42)
     
-    # Environment & Buffer Initialization
-    env = QuadrupedEnv(config)
     buffer_state = init_buffer(config)
     
     # Model Initialization
