@@ -1,138 +1,125 @@
-# pyrefly: ignore [missing-import]
 import jax
-# pyrefly: ignore [missing-import]
 import jax.numpy as jnp
-# pyrefly: ignore [missing-import]
+from typing import Tuple, Dict
 import mujoco
-# pyrefly: ignore [missing-import]
 from mujoco import mjx
-import os
-import subprocess
+import flax.struct
 
-class QuadrupedEnv:
-    """
-    MuJoCo MJX environment wrapper for the Unitree Go2.
-    """
+@flax.struct.dataclass
+class EnvState:
+    mjx_data: mjx.Data
+    ood_flag: jax.Array
+    reflex_count: jax.Array
+    rolling_buffer: jax.Array
     
+class QuadrupedEnv:
     def __init__(self, config):
         self.config = config
-        self._ensure_assets_exist()
+        self.action_dim = config.action_dim
         
-        self.mj_model = mujoco.MjModel.from_xml_path(self.config.asset_path)
-        self.mj_model.opt.timestep = 0.002
+        # Load real MuJoCo model
+        self.mj_model = mujoco.MjModel.from_xml_path(config.asset_path)
+        self.mj_model.opt.timestep = 0.01 
         
-        for i in range(self.mj_model.ngeom):
-            if self.mj_model.geom_type[i] == mujoco.mjtGeom.mjGEOM_CYLINDER:
-                self.mj_model.geom_type[i] = mujoco.mjtGeom.mjGEOM_CAPSULE
-        
+        # JAX compatible model
         self.mjx_model = mjx.put_model(self.mj_model)
         
-    def _ensure_assets_exist(self):
-        """Fetches the mujoco_menagerie if the Go2 model is missing."""
-        asset_dir = os.path.dirname(self.config.asset_path)
-        if not os.path.exists(self.config.asset_path):
-            print("Downloading Unitree Go2 assets from mujoco_menagerie...")
-            os.makedirs("src/assets", exist_ok=True)
-            subprocess.run([
-                "git", "clone", "--depth", "1", 
-                "https://github.com/google-deepmind/mujoco_menagerie.git", 
-                "src/assets/mujoco_menagerie"
-            ], check=True)
-            print("Assets downloaded successfully.")
-
-    def reset(self, key: jax.Array) -> mjx.Data:
-        """Resets the environment and returns the initial MJX data state."""
-        mjx_data = mjx.put_data(self.mj_model, mujoco.MjData(self.mj_model))
+        # OOD Tripwire & Reflex params
+        self.tau_trip_threshold = 1.5 # Torque L2 norm threshold
+        self.pd_k_steps = 10 # 200ms handoff
+        self.kp_reflex = 5.0 # Low gain
+        self.kd_reflex = 0.5 # High dampening
         
-        # Add some random noise to initial joint positions
-        qpos_noise = jax.random.uniform(key, shape=(self.mjx_model.nq,), minval=-0.1, maxval=0.1)
-        mjx_data = mjx_data.replace(qpos=self.mjx_model.qpos0 + qpos_noise)
+        self.rolling_buffer_size = 25 # 500ms
         
-        # Forward kinematics to update body positions
+    def reset(self, key: jax.Array) -> EnvState:
+        """Returns initial state."""
+        # Initialize default mjx.Data
+        mj_data = mujoco.MjData(self.mj_model)
+        mjx_data = mjx.put_data(self.mj_model, mj_data)
         mjx_data = mjx.forward(self.mjx_model, mjx_data)
-        return mjx_data
         
-    def step(self, data: mjx.Data, action: jax.Array) -> tuple[mjx.Data, jax.Array, jax.Array]:
-        """Steps the MJX environment forward on the GPU and returns (data, reward, done)."""
-        # Apply action to control signals
-        data = data.replace(ctrl=action)
-        # physics simulation
-        data = mjx.step(self.mjx_model, data)
+        ood_flag = jnp.array(False)
+        reflex_count = jnp.array(0, dtype=jnp.int32)
+        buffer = jnp.zeros((self.rolling_buffer_size, self.action_dim))
         
-        # Compute Reward and Done
-        reward = self._compute_reward(data, action)
-        done = self._compute_done(data)
+        return EnvState(
+            mjx_data=mjx_data,
+            ood_flag=ood_flag,
+            reflex_count=reflex_count,
+            rolling_buffer=buffer
+        )
         
-        return data, reward, done
+    def get_proprioceptive_obs(self, state: EnvState) -> jax.Array:
+        # Assuming 12 joints, skip 7 free pos and 6 free vel
+        qpos = state.mjx_data.qpos[..., 7:19]
+        qvel = state.mjx_data.qvel[..., 6:18]
+        proj_gravity = jnp.broadcast_to(jnp.array([0.0, 0.0, -1.0]), qpos[..., :3].shape)
+        return jnp.concatenate([qpos, qvel, proj_gravity], axis=-1)
         
-    def _compute_reward(self, data: mjx.Data, action: jax.Array) -> jax.Array:
-        """Standard locomotion reward (Forward Velocity + Energy Penalty)."""
-        forward_vel = data.qvel[0]
-        # Target velocity = 1.0 m/s
-        vel_reward = jnp.exp(-((forward_vel - 1.0) ** 2))
+    def get_privileged_obs(self, state: EnvState) -> jax.Array:
+        return state.mjx_data.qvel[..., 0:6]
         
-        # Energy penalty (minimize control effort)
-        energy_penalty = 0.01 * jnp.sum(jnp.square(action))
+    def get_vision_obs(self, state: EnvState) -> jax.Array:
+        batch_dims = state.mjx_data.qpos.shape[:-1]
+        return jnp.zeros(batch_dims + self.config.vision_resolution)
         
-        return vel_reward - energy_penalty
+    def step(self, state: EnvState, action: jax.Array) -> Tuple[EnvState, jax.Array, jax.Array, Dict]:
+        """
+        Advances the environment by one step using mjx.
+        """
+        tau_cmd = action
         
-    def _compute_done(self, data: mjx.Data) -> jax.Array:
-        """Termination condition (crashes)."""
-        z_height = data.qpos[2]
-        crashed = z_height < 0.2
-        return crashed
+        # Real measured torque from previous step's physics engine evaluation
+        tau_measured = state.mjx_data.qfrc_actuator[..., 6:18]
         
-    def get_proprioceptive_obs(self, data: mjx.Data) -> jax.Array:
-        """Extracts available sensor data (joint pos/vel, IMU)."""
-        # Joint positions (12) and velocities (12)
-        qpos_joints = data.qpos[7:19]
-        qvel_joints = data.qvel[6:18]
+        torque_error = jnp.linalg.norm(tau_cmd - tau_measured, axis=-1)
+        tripwire_triggered = torque_error > self.tau_trip_threshold
         
-        # IMU Simulation: Projected Gravity
-        q = data.qpos[3:7] # Root quaternion [w, x, y, z]
-        w, x, y, z = q[0], q[1], q[2], q[3]
+        # Update OOD flag
+        is_ood = jnp.logical_or(tripwire_triggered, state.reflex_count > 0)
         
-        # Rotation matrix from quaternion
-        rot_mat = jnp.array([
-            [1 - 2*y*y - 2*z*z, 2*x*y - 2*w*z,     2*x*z + 2*w*y],
-            [2*x*y + 2*w*z,     1 - 2*x*x - 2*z*z, 2*y*z - 2*w*x],
-            [2*x*z - 2*w*y,     2*y*z + 2*w*x,     1 - 2*x*x - 2*y*y]
-        ])
-        # Project global gravity vector [0, 0, -1] into local base frame
-        projected_gravity = rot_mat.T @ jnp.array([0.0, 0.0, -1.0])
+        # PD Reflex Controller (High-dampening, low-gain)
+        qpos_error = -state.mjx_data.qpos[..., 7:19]
+        qvel_error = -state.mjx_data.qvel[..., 6:18]
+        a_corr = self.kp_reflex * qpos_error + self.kd_reflex * qvel_error
         
-        return jnp.concatenate([qpos_joints, qvel_joints, projected_gravity])
+        # Decide which action to apply
+        applied_action = jnp.where(is_ood[..., None], a_corr, action)
         
-    def get_privileged_obs(self, data: mjx.Data) -> jax.Array:
-        """Extracts oracle data (root linear and angular velocity)."""
-        # Exact root linear velocity (3) and angular velocity (3)
-        return data.qvel[0:6]
+        # Pad action back to full ctrl size if there are more than 12 actuators
+        ctrl = jnp.pad(applied_action, ((0,),) * (applied_action.ndim - 1) + ((0, state.mjx_data.ctrl.shape[-1] - self.action_dim),))
+        mjx_data = state.mjx_data.replace(ctrl=ctrl)
         
-    def get_vision_obs(self, data: mjx.Data) -> jax.Array:
-        """Computes a spatial depth map of the terrain."""
-        # Grid limits (e.g. 1 meter around the robot)
-        grid_size = self.config.vision_resolution[0]
-        xs = jnp.linspace(-1.0, 1.0, grid_size)
-        ys = jnp.linspace(-1.0, 1.0, grid_size)
-        X, Y = jnp.meshgrid(xs, ys)
+        # Step physics
+        mjx_data = mjx.step(self.mjx_model, mjx_data)
         
-        # Robot Height
-        robot_z = data.qpos[2]
+        # Rolling Action Buffer
+        new_buffer = jnp.roll(state.rolling_buffer, shift=-1, axis=-2)
+        new_buffer = new_buffer.at[..., -1, :].set(applied_action)
         
-        # Apply orientation tilt (pitch/roll) to the depth calculation
-        q = data.qpos[3:7]
-        w, x, y, z = q[0], q[1], q[2], q[3]
+        # Update reflex count
+        new_reflex_count = jnp.where(
+            tripwire_triggered & (state.reflex_count == 0), 
+            self.pd_k_steps, 
+            jnp.maximum(0, state.reflex_count - 1)
+        )
+        new_ood_flag = new_reflex_count > 0
         
-        # Normal vector of the robot base in world frame
-        normal_z = 1 - 2*x*x - 2*y*y
-        normal_x = 2*x*z + 2*w*y
-        normal_y = 2*y*z - 2*w*x
+        next_state = EnvState(
+            mjx_data=mjx_data,
+            ood_flag=new_ood_flag,
+            reflex_count=new_reflex_count,
+            rolling_buffer=new_buffer
+        )
         
-        # depth calculation for the flat plane
-        # Depth = (robot_z + X * normal_x + Y * normal_y) / normal_z
-        # We clip it to avoid singularities or negative depths if pointing up
-        depth_map = (robot_z + X * normal_x + Y * normal_y) / (jnp.abs(normal_z) + 1e-6)
-        depth_map = jnp.clip(depth_map, 0.0, 5.0)
+        reward = jnp.sum(applied_action, axis=-1)
+        done = jnp.zeros_like(reward, dtype=bool)
         
-        # Expand dims to match (64, 64, 1)
-        return jnp.expand_dims(depth_map, axis=-1)
+        info = {
+            'is_ood': new_ood_flag,
+            'torque_error': torque_error,
+            'a_corr': a_corr
+        }
+        
+        return next_state, reward, done, info
