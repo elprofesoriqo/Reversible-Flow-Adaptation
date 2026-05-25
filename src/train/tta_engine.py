@@ -11,9 +11,11 @@ class TTAEngine:
     and updates a shadow copy of the LoRA weights, which is safely swapped
     into the 50Hz main control thread.
     """
-    def __init__(self, student_params, opt_state, tx, student_apply_fn, projection_apply_fn):
+    def __init__(self, student_params, opt_state, projection_params, tx, student_apply_fn, projection_apply_fn):
         self.active_params = student_params
         self.shadow_params = student_params
+        
+        self.projection_params = projection_params
         
         self.opt_state = opt_state
         self.tx = tx
@@ -79,6 +81,7 @@ class TTAEngine:
                 new_params, new_opt_state, metrics = tta_update_step(
                     self.shadow_params, 
                     self.opt_state, 
+                    self.projection_params,
                     proprio, 
                     vision, 
                     a_corr, 

@@ -57,33 +57,33 @@ def integrate_flow_backward(v_fn_time, x_1, num_steps=10, key=None):
         return (x_prev, log_p + delta_log_p, t - dt), None
         
     keys = jax.random.split(key, num_steps)
-    (x_0, total_delta_log_p, _), _ = jax.lax.scan(body_fn, (x_1, jnp.zeros(x_1.shape[0])), keys)
+    (x_0, total_delta_log_p, _), _ = jax.lax.scan(body_fn, (x_1, jnp.zeros(x_1.shape[0]), 1.0), keys)
     
     return x_0, total_delta_log_p
 
-def compute_tta_loss(params, proprio, vision, a_corr, student_apply_fn, projection_apply_fn, weight_decay=1e-4):
+def compute_tta_loss(student_params, projection_params, proprio, vision, a_corr, student_apply_fn, projection_apply_fn, weight_decay=1e-4):
     """
     Computes L_TTA: negative log-likelihood of a_corr + LoRA L2 penalty.
     """
     # Project a_corr (PD torque) to generative manifold
     # projection_apply_fn map (B, Chunk, Action) -> (B, Chunk, Action)
-    a_proj = projection_apply_fn(params, a_corr, reverse=False)
+    a_proj, proj_log_det = projection_apply_fn(projection_params, a_corr, reverse=False, return_log_det=True)
     
     # ODE Backward Integration
     def v_fn_time(x, t):
         t_arr = jnp.full((x.shape[0], 1), t)
         # student_apply_fn returns vector_field, priv_pred, physics_pred
-        v, _, _ = student_apply_fn(params, proprio, vision, x, t_arr)
+        v, _, _ = student_apply_fn(student_params, proprio, vision, x, t_arr)
         return v
         
     z_corr, delta_log_p = integrate_flow_backward(v_fn_time, a_proj, num_steps=10)
     
     log_p0 = -0.5 * jnp.sum(jnp.square(z_corr), axis=tuple(range(1, z_corr.ndim)))
-    log_p_a = log_p0 + delta_log_p
+    log_p_a = log_p0 + delta_log_p + proj_log_det
     nll = -jnp.mean(log_p_a)
     
     # L2 Weight Decay on LoRA parameters
-    flat_params, _ = jax.tree_util.tree_flatten_with_path(params)
+    flat_params, _ = jax.tree_util.tree_flatten_with_path(student_params)
     lora_l2_norm = 0.0
     for path, value in flat_params:
         path_str = ''.join(str(p) for p in path)
@@ -95,9 +95,9 @@ def compute_tta_loss(params, proprio, vision, a_corr, student_apply_fn, projecti
     return loss, {'nll': nll, 'lora_l2': lora_l2_norm, 'loss': loss}
 
 @jax.jit
-def tta_update_step(params, opt_state, proprio, vision, a_corr, tx, student_apply_fn, projection_apply_fn):
-    grad_fn = jax.value_and_grad(compute_tta_loss, has_aux=True)
-    (loss, metrics), grads = grad_fn(params, proprio, vision, a_corr, student_apply_fn, projection_apply_fn)
+def tta_update_step(student_params, opt_state, projection_params, proprio, vision, a_corr, tx, student_apply_fn, projection_apply_fn):
+    grad_fn = jax.value_and_grad(compute_tta_loss, argnums=0, has_aux=True)
+    (loss, metrics), grads = grad_fn(student_params, projection_params, proprio, vision, a_corr, student_apply_fn, projection_apply_fn)
     
     # Zero out gradients for non-LoRA parameters
     def mask_non_lora_grads(path, grad):
