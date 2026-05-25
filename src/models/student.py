@@ -9,13 +9,13 @@ from typing import Tuple
 
 class StudentPolicy(nn.Module):
     """Generative Policy with Action Chunking and Auxiliary Privileged Distillation."""
-    
+    obs_dim_privileged: int = 6
     @nn.compact
     def __call__(self, proprio_obs: jax.Array, vision_obs: jax.Array, noisy_actions: jax.Array, time_steps: jax.Array) -> Tuple[jax.Array, jax.Array, jax.Array]:
         vision_features, cls_token = VisionEncoder()(vision_obs)
         
         # Auxiliary Head: Predict privileged state from vision (Legacy)
-        priv_pred = nn.Dense(128)(vision_features) # config.obs_dim_privileged = 128
+        priv_pred = nn.Dense(self.obs_dim_privileged)(vision_features)
         
         # New Physics Head: Predict mu, m, n_hat using LoRA
         physics_pred = PhysicsHead()(cls_token)
