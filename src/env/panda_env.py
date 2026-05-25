@@ -131,4 +131,9 @@ class PandaEnv:
         # Done condition
         done = dist > 2.0 # Out of bounds
         
-        return next_state, reward, done, {"reflex_triggered": is_ood}
+        info = {
+            'is_ood': is_ood,
+            'torque_error': torque_error,
+            'a_corr': applied_action
+        }
+        return next_state, reward, done, info

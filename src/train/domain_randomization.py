@@ -85,8 +85,10 @@ def run_dr_baseline():
     current_states = batched_reset(keys)
     batched_collect = jax.vmap(collect_trajectories, in_axes=(None, None, 0, 0, None))
     batched_gae = jax.vmap(compute_gae)
+    
+    harvested_torques_list = []
         
-    for epoch in range(1, 11):
+    for epoch in range(1, config.num_epochs + 1):
         epoch_start_time = time.time()
         key, subkey1, subkey2, subkey3 = jax.random.split(key, 4)
         
@@ -96,7 +98,13 @@ def run_dr_baseline():
         # On-Policy Data Collection
         keys = jax.random.split(subkey1, config.batch_size)
         current_states, transitions = batched_collect(env, teacher_params, current_states, keys, config.chunk_size)
-        proprio, priv, vision, action, log_prob, values, rewards, dones = transitions
+        proprio, priv, vision, action, log_prob, values, rewards, dones, is_ood, a_corr = transitions
+        
+        # Harvest PD Torques
+        mask = np.array(is_ood)
+        harvested = np.array(a_corr)[mask]
+        if harvested.shape[0] > 0:
+            harvested_torques_list.append(harvested)
         
         chunk_proprio = proprio[:, 0, :]
         chunk_priv = priv[:, 0, :]
@@ -134,6 +142,12 @@ def run_dr_baseline():
             ckpt = {'teacher': teacher_params, 'student': student_params, 'buffer': buffer_state}
             checkpoint_manager.save(epoch, args=ocp.args.StandardSave(ckpt))
             print(f"Saved DR checkpoint to {checkpoint_dir}")
+            
+            if len(harvested_torques_list) > 0:
+                combined_torques = np.concatenate(harvested_torques_list, axis=0)
+                dataset_path = os.path.abspath(os.path.join(os.getcwd(), 'data', f'pd_torques_dataset_{args.env}.npy'))
+                np.save(dataset_path, combined_torques)
+                print(f"Saved {combined_torques.shape[0]} PD torques to {dataset_path}")
             
     logger.finish()
 

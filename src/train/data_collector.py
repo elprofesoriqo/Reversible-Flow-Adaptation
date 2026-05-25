@@ -32,10 +32,10 @@ def collect_trajectories(env: QuadrupedEnv, params, initial_state, key, steps_pe
         log_prob = -0.5 * jnp.sum(jnp.square(action - actor_mean) / var, axis=-1) - jnp.sum(log_scale, axis=-1)
         
         # Step env
-        next_state, reward, done = env.step(state, action)
+        next_state, reward, done, info = env.step(state, action)
         
         # We must return the variables needed for GAE and PPO
-        transition = (proprio, priv, vision, action, log_prob, critic_value, reward, done)
+        transition = (proprio, priv, vision, action, log_prob, critic_value, reward, done, info['is_ood'], info['a_corr'])
         return next_state, transition
         
     keys = jax.random.split(key, steps_per_env)
