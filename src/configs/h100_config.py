@@ -4,7 +4,7 @@ Hyperparameters tailored for NVIDIA H100 (80GB VRAM).
 
 from dataclasses import dataclass
 
-@dataclass
+@dataclass(frozen=True)
 class H100Config:
     num_envs: int = 32768
     batch_size: int = 8192
