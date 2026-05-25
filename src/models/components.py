@@ -138,7 +138,7 @@ class InvertibleProjectionMapping(nn.Module):
     hidden_dim: int = 64
     
     @nn.compact
-    def __call__(self, x: jax.Array, reverse: bool = False) -> jax.Array:
+    def __call__(self, x: jax.Array, reverse: bool = False, return_log_det: bool = False):
         d = x.shape[-1] // 2
         x1, x2 = x[..., :d], x[..., d:]
         
@@ -154,8 +154,16 @@ class InvertibleProjectionMapping(nn.Module):
         if not reverse:
             # Forward pass: mapping from PD torque to generative manifold
             y2 = x2 * jnp.exp(s) + t
-            return jnp.concatenate([x1, y2], axis=-1)
+            y = jnp.concatenate([x1, y2], axis=-1)
+            if return_log_det:
+                log_det = jnp.sum(s, axis=-1)
+                return y, log_det
+            return y
         else:
             # Reverse pass: from generative manifold back to PD torque
             y2 = (x2 - t) * jnp.exp(-s)
-            return jnp.concatenate([x1, y2], axis=-1)
+            y = jnp.concatenate([x1, y2], axis=-1)
+            if return_log_det:
+                log_det = -jnp.sum(s, axis=-1)
+                return y, log_det
+            return y
