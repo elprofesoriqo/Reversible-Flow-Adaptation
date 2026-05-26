@@ -21,9 +21,9 @@ from src.train.distillation import train_step as flow_matching_step
 from src.train.replay_buffer import init_buffer, add_batch, sample_batch
 from src.train.logger import WandbLogger
 
-def run_latency_benchmark(student_params, dummy_proprio, dummy_vision, dummy_noisy_act):
+def run_latency_benchmark(student_params, dummy_proprio, dummy_vision, dummy_noisy_act, config):
     """Benchmarks inference speed of Flow Matching vs DDPM."""
-    student = StudentPolicy()
+    student = StudentPolicy(obs_dim_privileged=config.obs_dim_privileged, action_dim=config.action_dim)
     
     @jax.jit
     def euler_integration_step(x_t, t):
@@ -97,8 +97,8 @@ def main():
     buffer_state = init_buffer(config)
     
     # Model Initialization
-    teacher = TeacherPolicy()
-    student = StudentPolicy()
+    teacher = TeacherPolicy(action_dim=config.action_dim)
+    student = StudentPolicy(obs_dim_privileged=config.obs_dim_privileged, action_dim=config.action_dim)
     
     key, k1, k2 = jax.random.split(key, 3)
     dummy_proprio = jnp.zeros((config.batch_size, config.obs_dim_proprio))
@@ -201,7 +201,7 @@ def main():
                 print(f"Saved {combined_torques.shape[0]} PD torques to {dataset_path}")
             
     # Benchmark
-    run_latency_benchmark(student_params, dummy_proprio, dummy_vision, dummy_noisy_act)
+    run_latency_benchmark(student_params, dummy_proprio, dummy_vision, dummy_noisy_act, config)
     
     logger.finish()
 

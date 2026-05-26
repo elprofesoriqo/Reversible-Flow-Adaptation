@@ -61,8 +61,9 @@ def run_dr_baseline():
     key = jax.random.PRNGKey(99)
     buffer_state = init_buffer(config)
     
-    teacher = TeacherPolicy()
-    student = StudentPolicy()
+    # Model Initialization
+    teacher = TeacherPolicy(action_dim=config.action_dim)
+    student = StudentPolicy(obs_dim_privileged=config.obs_dim_privileged, action_dim=config.action_dim)
     
     key, k1, k2 = jax.random.split(key, 3)
     dummy_proprio = jnp.zeros((config.batch_size, config.obs_dim_proprio))

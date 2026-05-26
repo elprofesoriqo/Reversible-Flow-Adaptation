@@ -31,7 +31,7 @@ def loss_fn(student_params, teacher_action_chunks, proprio_obs, privileged_obs, 
     target_vector_field = x_1 - x_0
     
     # Predict Vector Field and Privileged State with Student Policy
-    student = StudentPolicy()
+    student = StudentPolicy(obs_dim_privileged=config.obs_dim_privileged, action_dim=config.action_dim)
     vector_field_pred, priv_pred, physics_pred = student.apply(
         student_params, proprio_obs, vision_obs, x_t, t
     )
@@ -67,7 +67,7 @@ def train_step(student_params, opt_state, batch, key, tx, config):
     proprio_obs, privileged_obs, vision_obs, action_chunks = batch
     
     # Compute Gradients
-    student = StudentPolicy()
+    student = StudentPolicy(obs_dim_privileged=config.obs_dim_privileged, action_dim=config.action_dim)
     (loss, metrics), grads = jax.value_and_grad(loss_fn, has_aux=True)(
         student_params, action_chunks, 
         proprio_obs, privileged_obs, vision_obs, key, config

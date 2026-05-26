@@ -5,11 +5,13 @@ import jax.numpy as jnp
 from src.models.teacher import TeacherPolicy
 from src.env.quadruped_env import QuadrupedEnv
 
+from typing import Any
+
 @jax.jit(static_argnames=('env', 'steps_per_env'))
-def collect_trajectories(env: QuadrupedEnv, params, initial_state, key, steps_per_env):
+def collect_trajectories(env: Any, params, initial_state, key, steps_per_env):
     """Runs the Teacher policy to collect stochastic rollouts and compute values."""
     
-    teacher = TeacherPolicy()
+    teacher = TeacherPolicy(action_dim=env.config.action_dim)
     
     def step_fn(state, key):
         key, action_key = jax.random.split(key)
