@@ -69,6 +69,10 @@ class PandaEnv:
         # Mock friction=0.5
         return jnp.concatenate([state.target_object_mass, jnp.array([0.5])])
         
+    def get_vision_obs(self, state: PandaEnvState) -> jax.Array:
+        batch_dims = state.mjx_data.qpos.shape[:-1]
+        return jnp.zeros(batch_dims + self.config.vision_resolution)
+        
     def _pd_reflex_policy(self, state: PandaEnvState) -> jax.Array:
         # High-dampening PD stabilizer toward current safe posture
         current_qpos = state.mjx_data.qpos[:7]
