@@ -23,11 +23,12 @@ def compute_gae(rewards, values, next_value, dones, gamma=0.99, gae_lambda=0.95)
     returns = advantages + values
     return advantages, returns
 
-def ppo_loss_fn(params, apply_fn, obs_proprio, obs_priv, actions, old_log_probs, advantages, returns, clip_ratio=0.2):
+def ppo_loss_fn(params, obs_proprio, obs_priv, actions, old_log_probs, advantages, returns, clip_ratio=0.2):
     """PPO clipped surrogate objective with true Gaussian continuous control math."""
     
     # Forward pass: get parameterized distribution and value
-    teacher = TeacherPolicy()
+    action_dim = actions.shape[-1]
+    teacher = TeacherPolicy(action_dim=action_dim)
     actor_mean, actor_log_std, critic_value = teacher.apply(params, obs_proprio, obs_priv)
     actor_std = jnp.exp(actor_log_std)
     
