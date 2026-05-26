@@ -10,13 +10,16 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 
+export UV_CACHE_DIR="/mnt/storage_6/project_data/pl1046-01/uv_cache"
+export UV_PYTHON_INSTALL_DIR="/mnt/storage_6/project_data/pl1046-01/uv_python"
+
 echo "Starting training on host: $HOSTNAME"
 echo "Allocated GPU: $CUDA_VISIBLE_DEVICES"
 
 mkdir -p logs
 
 echo "Syncing dependencies via uv..."
-uv sync
+/mnt/storage_6/project_data/pl1046-01/bin/uv sync
 
 source .venv/bin/activate
 export XLA_PYTHON_CLIENT_MEM_FRACTION=0.95
@@ -27,7 +30,16 @@ source .env
 set +a
 
 
-echo "Triggering JAX/MJX compilation and training loop..."
-uv run python main.py
+echo "Triggering JAX/MJX compilation and training loop for Quadruped..."
+/mnt/storage_6/project_data/pl1046-01/bin/uv run python main.py --env=quadruped
 
-echo "Training job completed."
+echo "Triggering JAX/MJX compilation and training loop for Panda..."
+/mnt/storage_6/project_data/pl1046-01/bin/uv run python main.py --env=panda
+
+echo "Triggering Domain Randomization Baseline for Quadruped..."
+/mnt/storage_6/project_data/pl1046-01/bin/uv run python src/train/domain_randomization.py --env=quadruped
+
+echo "Triggering Domain Randomization Baseline for Panda..."
+/mnt/storage_6/project_data/pl1046-01/bin/uv run python src/train/domain_randomization.py --env=panda
+
+echo "Training jobs completed."
