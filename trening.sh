@@ -10,6 +10,8 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 
+set -e
+
 export UV_CACHE_DIR="/mnt/storage_6/project_data/pl1046-01/uv_cache"
 export UV_PYTHON_INSTALL_DIR="/mnt/storage_6/project_data/pl1046-01/uv_python"
 
