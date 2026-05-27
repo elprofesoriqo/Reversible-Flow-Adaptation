@@ -26,22 +26,30 @@ echo "Syncing dependencies via uv..."
 source .venv/bin/activate
 export XLA_PYTHON_CLIENT_MEM_FRACTION=0.95
 export XLA_FLAGS="--xla_gpu_force_compilation_parallelism=1"
+export XLA_PYTHON_CLIENT_ALLOCATOR=platform
 
 set -a
 source .env
 set +a
 
+echo "Starting multi-seed training pipeline for NeurIPS..."
 
-echo "Triggering JAX/MJX compilation and training loop for Quadruped..."
-/mnt/storage_6/project_data/pl1046-01/bin/uv run python main.py --env=quadruped
+for SEED in 42 1 2; do
+    echo "=================================================="
+    echo "Starting Training Run for Seed: $SEED"
+    echo "=================================================="
+    
+    #echo "Triggering JAX/MJX compilation and training loop for Quadruped (Seed $SEED)..."
+    #/mnt/storage_6/project_data/pl1046-01/bin/uv run python main.py --env=quadruped --seed=$SEED
+    
+    echo "Triggering JAX/MJX compilation and training loop for Panda (Seed $SEED)..."
+    /mnt/storage_6/project_data/pl1046-01/bin/uv run python main.py --env=panda --seed=$SEED
+    
+    #echo "Triggering Domain Randomization Baseline for Quadruped (Seed $SEED)..."
+    #/mnt/storage_6/project_data/pl1046-01/bin/uv run python src/train/domain_randomization.py --env=quadruped --seed=$SEED
+    
+    echo "Triggering Domain Randomization Baseline for Panda (Seed $SEED)..."
+    /mnt/storage_6/project_data/pl1046-01/bin/uv run python src/train/domain_randomization.py --env=panda --seed=$SEED
+done
 
-echo "Triggering JAX/MJX compilation and training loop for Panda..."
-/mnt/storage_6/project_data/pl1046-01/bin/uv run python main.py --env=panda
-
-echo "Triggering Domain Randomization Baseline for Quadruped..."
-/mnt/storage_6/project_data/pl1046-01/bin/uv run python src/train/domain_randomization.py --env=quadruped
-
-echo "Triggering Domain Randomization Baseline for Panda..."
-/mnt/storage_6/project_data/pl1046-01/bin/uv run python src/train/domain_randomization.py --env=panda
-
-echo "Training jobs completed."
+echo "Multi-seed training jobs completed."

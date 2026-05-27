@@ -20,6 +20,7 @@ from src.train.data_collector import collect_trajectories
 from src.train.distillation import train_step as flow_matching_step
 from src.train.replay_buffer import init_buffer, add_batch, sample_batch
 from src.train.logger import WandbLogger
+from src.train.domain_randomization import apply_domain_randomization
 
 def run_latency_benchmark(student_params, dummy_proprio, dummy_vision, dummy_noisy_act, config):
     """Benchmarks inference speed of Flow Matching vs DDPM."""
@@ -28,7 +29,7 @@ def run_latency_benchmark(student_params, dummy_proprio, dummy_vision, dummy_noi
     @jax.jit
     def euler_integration_step(x_t, t):
         # Flow Matching Inference
-        v_t, _ = student.apply(student_params, dummy_proprio, dummy_vision, x_t, t)
+        v_t, _, _ = student.apply(student_params, dummy_proprio, dummy_vision, x_t, t)
         return x_t + v_t
         
     @jax.jit
@@ -36,7 +37,7 @@ def run_latency_benchmark(student_params, dummy_proprio, dummy_vision, dummy_noi
         # 20-step DDPM iterative loop
         def body_fn(i, val):
             t = jnp.ones((dummy_noisy_act.shape[0], 1)) * (1.0 - i/20.0)
-            noise_pred, _ = student.apply(student_params, dummy_proprio, dummy_vision, val, t)
+            noise_pred, _, _ = student.apply(student_params, dummy_proprio, dummy_vision, val, t)
             return val - 0.05 * noise_pred
         return jax.lax.fori_loop(0, 20, body_fn, x_T)
         
@@ -72,6 +73,8 @@ def main():
     parser = argparse.ArgumentParser(description="Reversible Flow Adaptation Training")
     parser.add_argument('--env', type=str, default='quadruped', choices=['quadruped', 'panda'],
                         help="Select the environment morphology to train on.")
+    parser.add_argument('--seed', type=int, default=42,
+                        help="Random seed for reproducibility.")
     args = parser.parse_args()
     
     if args.env == 'panda':
@@ -85,14 +88,15 @@ def main():
         config = H100Config()
         env = QuadrupedEnv(config)
         
-    logger = WandbLogger(config)
+    run_name = f"{args.env}_main_s{args.seed}"
+    logger = WandbLogger(config, run_name=run_name)
     
     # Setup Checkpointer
-    checkpoint_dir = os.path.abspath(os.path.join(os.getcwd(), 'checkpoints'))
+    checkpoint_dir = os.path.abspath(os.path.join(os.getcwd(), f'checkpoints_{args.env}_s{args.seed}'))
     options = ocp.CheckpointManagerOptions(max_to_keep=3, create=True)
     checkpoint_manager = ocp.CheckpointManager(checkpoint_dir, options=options)
     
-    key = jax.random.PRNGKey(42)
+    key = jax.random.PRNGKey(args.seed)
     
     buffer_state = init_buffer(config)
     
@@ -192,11 +196,12 @@ def main():
         if epoch % 5 == 0:
             ckpt = {'teacher': teacher_params, 'student': student_params, 'buffer': buffer_state}
             checkpoint_manager.save(epoch, args=ocp.args.StandardSave(ckpt))
+            checkpoint_manager.wait_until_finished()
             print(f"Saved checkpoint to {checkpoint_dir} at epoch {epoch}")
             
             if len(harvested_torques_list) > 0:
                 combined_torques = np.concatenate(harvested_torques_list, axis=0)
-                dataset_path = os.path.abspath(os.path.join(os.getcwd(), 'data', f'pd_torques_dataset_{args.env}.npy'))
+                dataset_path = os.path.abspath(os.path.join(os.getcwd(), 'data', f'pd_torques_dataset_{args.env}_s{args.seed}.npy'))
                 np.save(dataset_path, combined_torques)
                 print(f"Saved {combined_torques.shape[0]} PD torques to {dataset_path}")
             

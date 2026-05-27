@@ -22,6 +22,7 @@ from src.train.data_collector import collect_trajectories
 from src.train.distillation import train_step as flow_matching_step
 from src.train.replay_buffer import init_buffer, add_batch, sample_batch
 from src.train.logger import WandbLogger
+from src.train.evaluate import run_neurips_evaluation
 
 def apply_domain_randomization(state, key, env_type):
     """
@@ -42,6 +43,7 @@ def apply_domain_randomization(state, key, env_type):
 def run_dr_baseline():
     parser = argparse.ArgumentParser(description="Domain Randomization Baseline Training")
     parser.add_argument('--env', type=str, default='quadruped', choices=['quadruped', 'panda'])
+    parser.add_argument('--seed', type=int, default=42, help="Random seed for reproducibility.")
     args = parser.parse_args()
     
     if args.env == 'panda':
@@ -51,14 +53,14 @@ def run_dr_baseline():
         config = H100Config()
         env = QuadrupedEnv(config)
     
-    # Overwrite wandb project so it doesn't mix with the TTA runs
-    logger = WandbLogger(config)
+    run_name = f"{args.env}_dr_s{args.seed}"
+    logger = WandbLogger(config, run_name=run_name)
     
-    checkpoint_dir = os.path.abspath(os.path.join(os.getcwd(), f'checkpoints_dr_{args.env}'))
+    checkpoint_dir = os.path.abspath(os.path.join(os.getcwd(), f'checkpoints_dr_{args.env}_s{args.seed}'))
     options = ocp.CheckpointManagerOptions(max_to_keep=3, create=True)
     checkpoint_manager = ocp.CheckpointManager(checkpoint_dir, options=options)
     
-    key = jax.random.PRNGKey(99)
+    key = jax.random.PRNGKey(args.seed)
     buffer_state = init_buffer(config)
     
     # Model Initialization
@@ -142,14 +144,15 @@ def run_dr_baseline():
         if epoch % 5 == 0:
             ckpt = {'teacher': teacher_params, 'student': student_params, 'buffer': buffer_state}
             checkpoint_manager.save(epoch, args=ocp.args.StandardSave(ckpt))
+            checkpoint_manager.wait_until_finished()
             print(f"Saved DR checkpoint to {checkpoint_dir}")
             
             if len(harvested_torques_list) > 0:
                 combined_torques = np.concatenate(harvested_torques_list, axis=0)
-                dataset_path = os.path.abspath(os.path.join(os.getcwd(), 'data', f'pd_torques_dataset_{args.env}.npy'))
+                dataset_path = os.path.abspath(os.path.join(os.getcwd(), 'data', f'pd_torques_dataset_dr_{args.env}_s{args.seed}.npy'))
                 np.save(dataset_path, combined_torques)
                 print(f"Saved {combined_torques.shape[0]} PD torques to {dataset_path}")
-            
+    
     logger.finish()
 
 if __name__ == "__main__":

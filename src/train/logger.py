@@ -4,7 +4,7 @@ import numpy as np
 import mujoco
 
 class WandbLogger:
-    def __init__(self, config):
+    def __init__(self, config, run_name=None):
         self.config = config
         
         local_dir = os.path.join(os.getcwd(), 'wandb_local')
@@ -13,6 +13,7 @@ class WandbLogger:
         
         wandb.init(
             project=config.wandb_project,
+            name=run_name,
             config=config.__dict__,
             dir=local_dir
         )
