@@ -6,8 +6,8 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class H100Config:
-    num_envs: int = 32768
-    batch_size: int = 8192
+    num_envs: int = 8192
+    batch_size: int = 256
     
     action_dim: int = 12         # 12 DoF Quadruped
     obs_dim_proprio: int = 27    # Joint pos (12), vel (12), projected gravity (3)
@@ -24,9 +24,9 @@ class H100Config:
     
     learning_rate: float = 3e-4
     aux_loss_weight: float = 0.1 # Weight for privileged state prediction
-    num_epochs: int = 1000
+    num_epochs: int = 600
     
-    buffer_capacity: int = 1_000_000
+    buffer_capacity: int = 100_000
     
     wandb_project: str = "agile-locomotion-flow"
     

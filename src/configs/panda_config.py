@@ -2,8 +2,8 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class PandaConfig:
-    num_envs: int = 32768
-    batch_size: int = 8192
+    num_envs: int = 8192
+    batch_size: int = 64
     
     action_dim: int = 7          # 7 DoF Panda Arm
     obs_dim_proprio: int = 14    # Joint pos (7), vel (7)
@@ -20,9 +20,9 @@ class PandaConfig:
     
     learning_rate: float = 3e-4
     aux_loss_weight: float = 0.1
-    num_epochs: int = 1000
+    num_epochs: int = 600
     
-    buffer_capacity: int = 1_000_000
+    buffer_capacity: int = 100_000
     
     wandb_project: str = "agile-locomotion-flow"
     
