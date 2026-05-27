@@ -19,7 +19,7 @@ class StudentPolicy(nn.Module):
         priv_pred = nn.Dense(self.obs_dim_privileged)(vision_features)
         
         # New Physics Head: Predict mu, m, n_hat using LoRA
-        physics_pred = PhysicsHead()(cls_token)
+        physics_pred = PhysicsHead(out_dim=self.obs_dim_privileged)(cls_token)
         
         # Combine proprioception and vision features
         cond_features = jnp.concatenate([proprio_obs, vision_features], axis=-1)

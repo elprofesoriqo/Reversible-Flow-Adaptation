@@ -43,7 +43,7 @@ def loss_fn(student_params, teacher_action_chunks, proprio_obs, privileged_obs, 
     aux_loss = jnp.mean((priv_pred - privileged_obs) ** 2)
     
     # Physics Head MSE Loss (Predicting physical parameters: mu, m, n_hat)
-    physics_target = privileged_obs[..., :5]
+    physics_target = privileged_obs
     aux_physics_mse = jnp.mean((physics_pred - physics_target) ** 2)
     
     # Total Loss
