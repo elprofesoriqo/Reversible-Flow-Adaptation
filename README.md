@@ -6,7 +6,7 @@ This repository contains the implementation and empirical evaluation suite for *
 
 By leveraging the mathematically invertible properties of Ordinary Differential Equations (ODEs), our method provides real-time Test-Time Adaptation (TTA) to Out-Of-Distribution (OOD) physics shifts (e.g., sudden payload mass increases, drastic terrain friction loss) without requiring environment-specific retraining or static Domain Randomization.
 
-> 📖 **[Read the Full Interactive Paper / Evaluation Suite on GitHub Pages](https://elprofesoriqo.github.io/robociki)**
+> 📖 **[Read the Full Interactive Paper / Evaluation Suite on GitHub Pages](https://elprofesoriqo.github.io/Reversible-Flow-Adaptation/)**
 
 ---
 
@@ -86,7 +86,7 @@ To render the full HTML report locally:
 quarto render evaluation/
 ```
 
-Or view the deployed version at: **[https://elprofesoriqo.github.io/robociki](https://elprofesoriqo.github.io/robociki)**
+Or view the deployed version at: **[https://elprofesoriqo.github.io/robociki](https://elprofesoriqo.github.io/Reversible-Flow-Adaptation/)**
 
 Then open `evaluation/docs/index.html` in your web browser. 
 
