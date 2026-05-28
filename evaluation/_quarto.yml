@@ -1,0 +1,33 @@
+project:
+  type: book
+  output-dir: docs
+  pre-render: "python 00_data_extraction.py"
+
+book:
+  title: "Flow-Matched Distillation & Reversible Flow Adaptation: Empirical Evaluation"
+  author: "Research Team"
+  date: last-modified
+  chapters:
+    - index.qmd
+    - 01b_hardware_efficiency.qmd
+    - 01_training_convergence.qmd
+    - 02_manifold_analysis.qmd
+    - 03_generalization.qmd
+    - 04_quadruped_deep_dive.qmd
+    - 05_panda_deep_dive.qmd
+
+format:
+  html:
+    theme: flatly
+    code-fold: true
+    toc: true
+    number-sections: true
+    fig-width: 8
+    fig-height: 5
+    fig-align: center
+
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: true
