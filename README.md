@@ -71,23 +71,3 @@ Analysis of the PPO Teacher's optimization dynamics (`ppo_entropy`, `ppo_v_loss`
 ### 3. Out-Of-Distribution Survival (vs. Domain Randomization)
 When subjected to unobserved physical perturbations (e.g., picking 3x heavier payloads or dropping a 5kg mass mid-walk), static Domain Randomization saturates at high torque tracking errors, ultimately failing.
 **Reversible Flow Adaptation** resolves the causality loop. Tracking error spikes momentarily upon OOD impact, but immediately collapses exactly at $t=300ms$ when the asynchronous LoRA adapter swap provides the updated, adapted physics representation to the vector field.
-
----
-
-## Viewing the Full Interactive Evaluation
-
-The empirical validation suite—featuring $L_2$ Norm density distributions, PCA scree plots, ANOVA statistical tests, and simulated lag window degradation analysis—is available as a compiled Quarto book.
-
-The mathematical objective function and core methodologies have been compiled directly into the Quarto book, serving as the official paper. 
-
-To render the full HTML report locally:
-
-```bash
-quarto render evaluation/
-```
-
-Or view the deployed version at: **[https://elprofesoriqo.github.io/robociki](https://elprofesoriqo.github.io/Reversible-Flow-Adaptation/)**
-
-Then open `evaluation/docs/index.html` in your web browser. 
-
-*(Note: Data extraction from Weights & Biases happens silently via a pre-render Python script. No manual downloading is required).*
